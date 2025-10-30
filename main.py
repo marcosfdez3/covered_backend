@@ -347,16 +347,5 @@ def status_detallado(db: Session = Depends(get_db)):
             "timestamp": datetime.utcnow().isoformat()
         }
 
-# ==================== EJECUCIÓN DIRECTA ====================
 
-if __name__ == "__main__":
-    import uvicorn
-    print("🚀 Iniciando FactCheck API en modo desarrollo...")
-    print("📚 Documentación disponible en: http://localhost:8000/docs")
-    print("🔍 Health check en: http://localhost:8000/health")
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=8000,
-        reload=True
-    )
+    
