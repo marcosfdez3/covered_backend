@@ -120,6 +120,69 @@ async def verificar_noticia_movil(noticia: Noticia, db: Session = Depends(get_db
         
         logger.info(f"📱 Verificación móvil - Texto: {len(texto)} chars, URL: {url}")
         
+        # PRIORIDAD ABSOLUTA: Si hay URL, extraer contenido y usarlo como texto principal
+        if url and url.strip():
+            logger.info(f"🔗 Procesando URL: {url}")
+            try:
+                texto_extraido = extraer_texto_desde_url(url.strip())
+                
+                if texto_extraido.startswith("❌"):
+                    return {
+                        "success": False,
+                        "error": texto_extraido,
+                        "resultado": "error_url",
+                        "razonamiento": texto_extraido
+                    }
+                
+                # USAR EXCLUSIVAMENTE el contenido extraído, ignorar texto si hay URL
+                texto_combinado = texto_extraido
+                logger.info(f"✅ URL procesada - Texto extraído: {len(texto_combinado)} chars")
+                
+            except Exception as e:
+                logger.error(f"❌ Error procesando URL: {e}")
+                return {
+                    "success": False,
+                    "error": f"Error procesando enlace: {str(e)}",
+                    "resultado": "error_url",
+                    "razonamiento": f"No se pudo analizar el enlace: {str(e)}"
+                }
+        else:
+            texto_combinado = texto
+        
+        if not texto_combinado.strip():
+            return {
+                "success": False,
+                "error": "No se proporcionó texto para verificar",
+                "resultado": "error_vacio"
+            }
+        
+        # Para contenido de URLs, forzar modo que priorice el análisis contextual
+        resultado = verificar_hibrido(
+            texto=texto_combinado,
+            db=db,
+            url=url,
+            usuario_id=noticia.usuario_id,
+            modo="ia_first" if url else "auto",  # Forzar IA primero para URLs
+            use_ia=True
+        )
+        
+        return resultado
+        
+    except Exception as e:
+        logger.error(f"❌ Error en verificación móvil: {e}")
+        return {
+            "success": False,
+            "error": f"Error interno: {str(e)}",
+            "resultado": "error",
+            "razonamiento": "Estamos teniendo problemas técnicos. Por favor, intenta más tarde."
+        }
+    """Endpoint optimizado para aplicaciones móviles - VERSIÓN CORREGIDA"""
+    try:
+        texto = noticia.texto or ""
+        url = noticia.url
+        
+        logger.info(f"📱 Verificación móvil - Texto: {len(texto)} chars, URL: {url}")
+        
         # Procesar URL si existe
         if url and url.strip():
             logger.info(f"🔗 Procesando URL: {url}")
