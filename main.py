@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 # 🔥 CARGAR VARIABLES DE ENTORNO AL INICIO - ANTES DE CUALQUIER IMPORT
 load_dotenv()
 
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Verificar variables críticas
 if not os.getenv("GEMINI_API_KEY"):
     print("❌ ERROR: GEMINI_API_KEY no encontrada")
@@ -109,6 +113,72 @@ def verificar_hibrido_endpoint(
 
 @app.post("/verificar/movil")
 async def verificar_noticia_movil(noticia: Noticia, db: Session = Depends(get_db)):
+    """Endpoint optimizado para aplicaciones móviles - VERSIÓN CORREGIDA"""
+    try:
+        texto = noticia.texto or ""
+        url = noticia.url
+        
+        logger.info(f"📱 Verificación móvil - Texto: {len(texto)} chars, URL: {url}")
+        
+        # Procesar URL si existe
+        if url and url.strip():
+            logger.info(f"🔗 Procesando URL: {url}")
+            try:
+                from services.url_extractor import extraer_texto_desde_url
+                texto_extraido = extraer_texto_desde_url(url.strip())
+                
+                if texto_extraido.startswith("❌"):
+                    # Si falla la extracción, devolver error claro
+                    return {
+                        "success": False,
+                        "error": texto_extraido,
+                        "resultado": "error_url",
+                        "razonamiento": texto_extraido
+                    }
+                
+                # Combinar texto y contenido extraído
+                texto_combinado = f"{texto} {texto_extraido}".strip()
+                logger.info(f"✅ URL procesada - Texto total: {len(texto_combinado)} chars")
+                
+            except Exception as e:
+                logger.error(f"❌ Error procesando URL: {e}")
+                return {
+                    "success": False,
+                    "error": f"Error procesando enlace: {str(e)}",
+                    "resultado": "error_url",
+                    "razonamiento": f"No se pudo analizar el enlace: {str(e)}"
+                }
+        else:
+            texto_combinado = texto
+        
+        if not texto_combinado.strip():
+            return {
+                "success": False,
+                "error": "No se proporcionó texto para verificar",
+                "resultado": "error_vacio"
+            }
+        
+        # Usar el sistema híbrido para verificación
+        from services.hybrid_verifier import verificar_hibrido
+        resultado = verificar_hibrido(
+            texto=texto_combinado,
+            db=db,
+            url=url,
+            usuario_id=noticia.usuario_id,
+            modo="auto",
+            use_ia=True
+        )
+        
+        return resultado
+        
+    except Exception as e:
+        logger.error(f"❌ Error en verificación móvil: {e}")
+        return {
+            "success": False,
+            "error": f"Error interno: {str(e)}",
+            "resultado": "error",
+            "razonamiento": "Estamos teniendo problemas técnicos. Por favor, intenta más tarde."
+        }
     """Endpoint optimizado para móvil con mejor manejo de URLs"""
     try:
         texto = noticia.texto or ""
