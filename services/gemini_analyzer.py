@@ -45,6 +45,7 @@ def analizar_con_gemini(texto: str) -> Dict[str, Any]:
         3. Para noticias recientes, analiza la coherencia y posibles sesgos
         4. Si es una URL o referencia a contenido actual, analiza el tipo de información
         5. Considera que las noticias pueden ser sobre eventos planeados o anuncios futuros
+        6. Lo más importante es que antes de dar un veredicto, te encargues de verificar la fuente de la noticia sea la fecha que sea, y verificar el día actual
         
         EJEMPLOS:
         - "En 2025 habrá elecciones" → probablemente_verdadero (eventos cíclicos)
