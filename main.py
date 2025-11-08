@@ -113,6 +113,28 @@ def verificar_hibrido_endpoint(
 
 @app.post("/verificar/movil")
 async def verificar_noticia_movil(noticia: Noticia, db: Session = Depends(get_db)):
+    try:
+        texto = noticia.texto or ""
+        url = noticia.url
+        
+        # PRIORIDAD: Si hay URL, extraer contenido
+        if url and url.strip():
+            logger.info(f"🔗 Procesando URL: {url}")
+            texto_extraido = extraer_texto_desde_url(url.strip())
+            
+            if texto_extraido.startswith("❌"):
+                return {
+                    "success": False,
+                    "error": texto_extraido,
+                    "resultado": "error_url"
+                }
+            
+            # Usar contenido extraído como texto principal
+            texto_combinado = texto_extraido
+        else:
+            texto_combinado = texto
+        
+        # Resto de la lógica...
     """Endpoint optimizado para aplicaciones móviles - VERSIÓN CORREGIDA"""
     try:
         texto = noticia.texto or ""

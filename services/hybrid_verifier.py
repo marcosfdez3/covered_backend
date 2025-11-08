@@ -143,6 +143,14 @@ def _obtener_razonamiento(resultado: Dict[str, Any]) -> str:
     return razonamientos_por_defecto.get(resultado_final, "Análisis completado.")
 
 def _elegir_modo_inteligente(texto: str) -> str:
+    """Decide automáticamente la mejor estrategia basada en el texto"""
+    texto_lower = texto.lower().strip()
+    
+    # DETECCIÓN MEJORADA DE URLs
+    if texto_lower.startswith(('http://', 'https://', 'www.')):
+        return "factcheck_first"  # Priorizar factcheck para URLs de noticias
+    
+    # Resto de la lógica actual...
     """
     Decide automáticamente la mejor estrategia basada en el texto
     """
