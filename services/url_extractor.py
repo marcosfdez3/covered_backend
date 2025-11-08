@@ -9,183 +9,144 @@ logger = logging.getLogger(__name__)
 def extraer_con_scraperapi(url: str) -> str:
     """
     Extrae contenido usando ScraperAPI
-    1,000 requests gratis/mes - ideal para sitios complejos
     """
     try:
         api_key = os.getenv("SCRAPERAPI_KEY")
         
         if not api_key:
-            logger.warning("❌ SCRAPERAPI_KEY no configurada")
-            return "❌ Servicio de extracción no configurado"
+            logger.warning("SCRAPERAPI_KEY no configurada")
+            return ""
         
         logger.info(f"🔗 ScraperAPI procesando: {url}")
         
-        # Configurar parámetros para ScraperAPI
         params = {
             "api_key": api_key,
             "url": url,
-            "render": "false",      # No JS (más rápido)
-            "autoparse": "true",   # Que ScraperAPI limpie el HTML
-            "country_code": "us"   # Servidores US
+            "render": "false",    # Más rápido sin JavaScript
+            "autoparse": "true",  # Que ScraperAPI limpie el HTML
+            "country_code": "us"
         }
         
         response = requests.get(
             "http://api.scraperapi.com/",
             params=params,
-            timeout=25,  # ScraperAPI puede ser lento
-            headers={
-                'User-Agent': 'Mozilla/5.0 (compatible; Covered-Bot/1.0)'
-            }
+            timeout=20
         )
         
-        logger.info(f"📡 ScraperAPI response: {response.status_code}")
+        logger.info(f"📡 ScraperAPI status: {response.status_code}")
         
         if response.status_code == 200:
-            # ScraperAPI devuelve HTML limpio
+            # Procesar HTML devuelto por ScraperAPI
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Remover elementos no deseados
-            for element in soup(["script", "style", "nav", "header", "footer", "aside"]):
+            # Limpiar elementos no deseados
+            for element in soup(["script", "style", "nav", "header", "footer", "aside", "meta"]):
                 element.decompose()
             
             # Estrategia de extracción inteligente
-            contenido = extraer_contenido_inteligente(soup)
+            contenido = extraer_contenido_estrategico(soup)
             
             if contenido:
-                contenido = contenido.strip()[:2800]  # Limitar tamaño
+                contenido = limpiar_texto(contenido)
                 logger.info(f"✅ ScraperAPI extrajo {len(contenido)} caracteres")
                 return contenido
             else:
-                return "❌ No se pudo extraer contenido del sitio"
+                logger.warning("ScraperAPI no pudo extraer contenido")
+                return ""
                 
-        elif response.status_code == 403:
-            return "❌ Límite de ScraperAPI excedido o API key inválida"
-        elif response.status_code == 404:
-            return "❌ ScraperAPI no pudo acceder a este enlace"
-        elif response.status_code == 429:
-            return "❌ Demasiadas requests a ScraperAPI (límite excedido)"
         else:
-            return f"❌ Error ScraperAPI: {response.status_code} - {response.text[:100]}"
+            logger.error(f"ScraperAPI error: {response.status_code}")
+            return ""
             
-    except requests.exceptions.Timeout:
-        return "❌ Timeout - ScraperAPI no respondió a tiempo"
-    except requests.exceptions.ConnectionError:
-        return "❌ Error de conexión con ScraperAPI"
     except Exception as e:
-        logger.error(f"❌ Error ScraperAPI: {str(e)}")
-        return f"❌ Error con servicio de extracción: {str(e)}"
+        logger.error(f"Error ScraperAPI: {str(e)}")
+        return ""
 
-def extraer_contenido_inteligente(soup: BeautifulSoup) -> str:
+def extraer_contenido_estrategico(soup: BeautifulSoup) -> str:
     """
-    Extrae contenido de forma inteligente buscando el texto principal
+    Extrae contenido usando múltiples estrategias
     """
-    # Estrategia 1: Buscar elementos semánticos principales
+    # Estrategia 1: Elementos semánticos
     selectores_prioritarios = [
-        'article', 
-        'main',
+        'article',
+        'main', 
         '[role="main"]',
         '.content',
-        '#content',
         '.post-content',
-        '.entry-content',
-        '.article-content'
+        '.article-content',
+        '.entry-content'
     ]
     
     for selector in selectores_prioritarios:
         elemento = soup.select_one(selector)
         if elemento:
             texto = elemento.get_text().strip()
-            if len(texto) > 200:
-                logger.info(f"✅ Encontrado contenido en: {selector}")
+            if len(texto) > 150:
+                logger.info(f"✅ Contenido en: {selector}")
                 return texto
     
-    # Estrategia 2: Buscar en el body si no encontramos elementos semánticos
+    # Estrategia 2: Párrafos y encabezados del body
     body = soup.find('body')
     if body:
-        # Extraer solo párrafos y encabezados del body
         textos = []
         for element in body.find_all(['p', 'h1', 'h2', 'h3']):
             text = element.get_text().strip()
-            if text and len(text) > 30:  # Filtrar textos muy cortos
+            if text and 25 < len(text) < 800:
                 textos.append(text)
         
         if textos:
-            logger.info(f"✅ Extraídos {len(textos)} fragmentos del body")
-            return ' '.join(textos)
+            logger.info(f"✅ {len(textos)} fragmentos del body")
+            return ' '.join(textos[:15])  # Máximo 15 fragmentos
     
-    # Estrategia 3: Último recurso - todo el texto
+    # Estrategia 3: Todo el texto estructurado
     texto_completo = soup.get_text()
     lineas = [linea.strip() for linea in texto_completo.split('\n') if linea.strip()]
-    lineas_filtradas = [linea for linea in lineas if len(linea) > 40]
+    lineas_filtradas = [linea for linea in lineas if 30 < len(linea) < 1000]
     
     if lineas_filtradas:
-        logger.info(f"✅ Usando extracción completa: {len(lineas_filtradas)} líneas")
-        return ' '.join(lineas_filtradas[:20])  # Máximo 20 líneas
+        logger.info(f"✅ {len(lineas_filtradas)} líneas estructuradas")
+        return ' '.join(lineas_filtradas[:20])
     
     return ""
 
-def extraccion_directa_fallback(url: str) -> str:
+def limpiar_texto(texto: str) -> str:
     """
-    Fallback muy simple para cuando ScraperAPI no funciona
+    Limpia y normaliza el texto extraído
     """
-    try:
-        logger.info("🔄 Intentando extracción directa como fallback...")
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Extracción mínima
-        textos = []
-        for element in soup.find_all(['p', 'h1']):
-            text = element.get_text().strip()
-            if text and 30 < len(text) < 1000:
-                textos.append(text)
-        
-        if textos:
-            resultado = ' '.join(textos[:8])[:2000]  # 8 párrafos máximo
-            logger.info(f"✅ Extracción directa: {len(resultado)} caracteres")
-            return resultado
-        
-        return "❌ No se pudo extraer contenido automáticamente"
-        
-    except Exception as e:
-        logger.error(f"❌ Error en extracción directa: {e}")
-        return f"❌ Error accediendo al sitio: {str(e)}"
+    # Unificar espacios
+    texto = ' '.join(texto.split())
+    
+    # Limitar tamaño para no saturar la IA
+    if len(texto) > 2800:
+        texto = texto[:2800] + "..."
+    
+    return texto
 
 def extraer_texto_desde_url(url: str) -> str:
     """
     Función principal - usa ScraperAPI como primario
     """
     try:
-        # Validar y normalizar URL
-        parsed_url = urlparse(url)
-        if not parsed_url.scheme:
+        # Normalizar URL
+        if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
-            parsed_url = urlparse(url)
         
+        parsed_url = urlparse(url)
         if not parsed_url.netloc:
-            return "❌ URL inválida - falta dominio"
+            return "❌ URL inválida - dominio no válido"
         
         logger.info(f"🌐 Iniciando extracción para: {url}")
         
         # 1. PRIMERO: Intentar con ScraperAPI
-        resultado_scraper = extraer_con_scraperapi(url)
+        resultado = extraer_con_scraperapi(url)
         
-        if not resultado_scraper.startswith("❌"):
-            return resultado_scraper
+        if resultado:
+            return resultado
         
-        # 2. Si ScraperAPI falla, intentar extracción directa
-        logger.info("🔄 ScraperAPI falló, intentando extracción directa...")
-        resultado_directo = extraccion_directa_fallback(url)
-        
-        return resultado_directo
+        # 2. Si ScraperAPI no devuelve contenido, mensaje claro
+        logger.info("ScraperAPI no pudo extraer contenido")
+        return "❌ No se pudo extraer contenido automáticamente de este enlace. Por favor, copia y pega el texto manualmente."
         
     except Exception as e:
-        logger.error(f"💥 Error crítico en extracción: {e}")
+        logger.error(f"Error en extracción: {str(e)}")
         return f"❌ Error procesando enlace: {str(e)}"
