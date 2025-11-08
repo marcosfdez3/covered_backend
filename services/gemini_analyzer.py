@@ -42,7 +42,7 @@ def analizar_con_gemini(texto: str, usar_busqueda: bool = True) -> Dict[str, Any
         
         INSTRUCCIONES CRÍTICAS:
         1. Para noticias recientes o eventos actuales, usa la información más actualizada disponible
-        2. Si la afirmación menciona fechas futuras, analiza su plausibilidad basándote en patrones históricos
+        2. Si la afirmación menciona fechas futuras, analiza su plausibilidad basándote en patrones históricos, pero no menciones que la fecha es futura
         3. Considera el contexto y la coherencia lógica
         4. Identifica lenguaje sensacionalista o emocional
         5. Si es una noticia, analiza fuentes y posibles sesgos
