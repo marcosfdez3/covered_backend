@@ -124,7 +124,6 @@ async def verificar_noticia_movil(noticia: Noticia, db: Session = Depends(get_db
         if url and url.strip():
             logger.info(f"🔗 Procesando URL: {url}")
             try:
-                from services.url_extractor import extraer_texto_desde_url
                 texto_extraido = extraer_texto_desde_url(url.strip())
                 
                 if texto_extraido.startswith("❌"):
@@ -159,7 +158,6 @@ async def verificar_noticia_movil(noticia: Noticia, db: Session = Depends(get_db
             }
         
         # Usar el sistema híbrido para verificación
-        from services.hybrid_verifier import verificar_hibrido
         resultado = verificar_hibrido(
             texto=texto_combinado,
             db=db,
@@ -179,179 +177,6 @@ async def verificar_noticia_movil(noticia: Noticia, db: Session = Depends(get_db
             "resultado": "error",
             "razonamiento": "Estamos teniendo problemas técnicos. Por favor, intenta más tarde."
         }
-    try:
-        texto = noticia.texto or ""
-        url = noticia.url
-        
-        # PRIORIDAD: Si hay URL, extraer contenido
-        if url and url.strip():
-            logger.info(f"🔗 Procesando URL: {url}")
-            texto_extraido = extraer_texto_desde_url(url.strip())
-            
-            if texto_extraido.startswith("❌"):
-                return {
-                    "success": False,
-                    "error": texto_extraido,
-                    "resultado": "error_url"
-                }
-            
-            # Usar contenido extraído como texto principal
-            texto_combinado = texto_extraido
-        else:
-            texto_combinado = texto
-        
-        # Resto de la lógica...
-    """Endpoint optimizado para aplicaciones móviles - VERSIÓN CORREGIDA"""
-    try:
-        texto = noticia.texto or ""
-        url = noticia.url
-        
-        logger.info(f"📱 Verificación móvil - Texto: {len(texto)} chars, URL: {url}")
-        
-        # Procesar URL si existe
-        if url and url.strip():
-            logger.info(f"🔗 Procesando URL: {url}")
-            try:
-                from services.url_extractor import extraer_texto_desde_url
-                texto_extraido = extraer_texto_desde_url(url.strip())
-                
-                if texto_extraido.startswith("❌"):
-                    # Si falla la extracción, devolver error claro
-                    return {
-                        "success": False,
-                        "error": texto_extraido,
-                        "resultado": "error_url",
-                        "razonamiento": texto_extraido
-                    }
-                
-                # Combinar texto y contenido extraído
-                texto_combinado = f"{texto} {texto_extraido}".strip()
-                logger.info(f"✅ URL procesada - Texto total: {len(texto_combinado)} chars")
-                
-            except Exception as e:
-                logger.error(f"❌ Error procesando URL: {e}")
-                return {
-                    "success": False,
-                    "error": f"Error procesando enlace: {str(e)}",
-                    "resultado": "error_url",
-                    "razonamiento": f"No se pudo analizar el enlace: {str(e)}"
-                }
-        else:
-            texto_combinado = texto
-        
-        if not texto_combinado.strip():
-            return {
-                "success": False,
-                "error": "No se proporcionó texto para verificar",
-                "resultado": "error_vacio"
-            }
-        
-        # Usar el sistema híbrido para verificación
-        from services.hybrid_verifier import verificar_hibrido
-        resultado = verificar_hibrido(
-            texto=texto_combinado,
-            db=db,
-            url=url,
-            usuario_id=noticia.usuario_id,
-            modo="auto",
-            use_ia=True
-        )
-        
-        return resultado
-        
-    except Exception as e:
-        logger.error(f"❌ Error en verificación móvil: {e}")
-        return {
-            "success": False,
-            "error": f"Error interno: {str(e)}",
-            "resultado": "error",
-            "razonamiento": "Estamos teniendo problemas técnicos. Por favor, intenta más tarde."
-        }
-    """Endpoint optimizado para móvil con mejor manejo de URLs"""
-    try:
-        texto = noticia.texto or ""
-        url = noticia.url
-        
-        logger.info(f"📱 Verificación móvil - Texto: {len(texto)} chars, URL: {url}")
-        
-        # Procesar URL si existe
-        if url and url.strip():
-            logger.info(f"🔗 Procesando URL: {url}")
-            try:
-                texto_extraido = extraer_texto_desde_url(url.strip())
-                
-                if texto_extraido.startswith("❌"):
-                    # Si falla la extracción, devolver error claro
-                    return {
-                        "success": False,
-                        "error": texto_extraido,
-                        "resultado": "error_url",
-                        "razonamiento": texto_extraido
-                    }
-                
-                # Combinar texto y contenido extraído
-                texto_combinado = f"{texto} {texto_extraido}".strip()
-                logger.info(f"✅ URL procesada - Texto total: {len(texto_combinado)} chars")
-                
-            except Exception as e:
-                logger.error(f"❌ Error procesando URL: {e}")
-                return {
-                    "success": False,
-                    "error": f"Error procesando enlace: {str(e)}",
-                    "resultado": "error_url",
-                    "razonamiento": f"No se pudo analizar el enlace: {str(e)}"
-                }
-        else:
-            texto_combinado = texto
-        
-        if not texto_combinado.strip():
-            return {
-                "success": False,
-                "error": "No se proporcionó texto para verificar",
-                "resultado": "error_vacio"
-            }
-        
-        # Usar el sistema híbrido para verificación
-        resultado = verificar_hibrido(
-            texto=texto_combinado,
-            db=db,
-            url=url,
-            usuario_id=noticia.usuario_id,
-            modo="auto",
-            use_ia=True
-        )
-        
-        return resultado
-        
-    except Exception as e:
-        logger.error(f"❌ Error en verificación móvil: {e}")
-        return {
-            "success": False,
-            "error": f"Error interno: {str(e)}",
-            "resultado": "error"
-        }
-    """Endpoint optimizado para aplicaciones móviles"""
-    texto = noticia.texto
-    
-    if noticia.url:
-        try:
-            texto_extraido = extraer_texto_desde_url(noticia.url)
-            texto = f"{texto} {texto_extraido}" if texto else texto_extraido
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Error al procesar URL: {str(e)}"
-            }
-    
-    resultado = verificar_hibrido(
-        texto=texto,
-        db=db,
-        url=noticia.url,
-        usuario_id=noticia.usuario_id,
-        modo="auto",
-        use_ia=True
-    )
-    return resultado
 
 # ==================== GESTIÓN DE CONSULTAS ====================
 
@@ -567,6 +392,3 @@ def status_detallado(db: Session = Depends(get_db)):
             "error": f"Error obteniendo status: {str(e)}",
             "timestamp": datetime.utcnow().isoformat()
         }
-
-
-    
