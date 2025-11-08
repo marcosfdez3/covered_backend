@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 import logging
 from datetime import datetime
+import re
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -142,6 +143,31 @@ def _obtener_razonamiento(resultado: Dict[str, Any]) -> str:
     
     return razonamientos_por_defecto.get(resultado_final, "Análisis completado.")
 
+def _detectar_tipo_contenido(texto: str) -> str:
+    """
+    Detecta el tipo de contenido para ajustar la estrategia
+    """
+    texto_lower = texto.lower()
+    
+    # Patrones de fechas futuras
+    patrones_futuros = [
+        r'\b202[5-9]\b', r'\b20[3-9][0-9]\b', r'\bpróximo año\b',
+        r'\ben \d{1,2} de [a-z]+ de 202[5-9]\b', r'\bpara 202[5-9]\b'
+    ]
+    
+    for patron in patrones_futuros:
+        if re.search(patron, texto_lower):
+            return "contenido_futuro"
+    
+    # Patrones de noticias recientes
+    if any(keyword in texto_lower for keyword in [
+        "noticia", "anunció", "declaró", "informó", "según fuentes",
+        "última hora", "breaking", "twitter", "facebook", "red social"
+    ]):
+        return "noticia_reciente"
+    
+    return "general"
+
 def _elegir_modo_inteligente(texto: str) -> str:
     """
     Decide automáticamente la mejor estrategia basada en el texto
@@ -153,21 +179,6 @@ def _elegir_modo_inteligente(texto: str) -> str:
     # Para contenido futuro o reciente, priorizar análisis contextual de IA
     if tipo_contenido in ["contenido_futuro", "noticia_reciente"]:
         return "ia_first"
-    
-    # Resto de la lógica original...
-    # ... (mantener tu código actual aquí)
-    """Decide automáticamente la mejor estrategia basada en el texto"""
-    texto_lower = texto.lower().strip()
-    
-    # DETECCIÓN MEJORADA DE URLs
-    if texto_lower.startswith(('http://', 'https://', 'www.')):
-        return "factcheck_first"  # Priorizar factcheck para URLs de noticias
-    
-    # Resto de la lógica actual...
-    """
-    Decide automáticamente la mejor estrategia basada en el texto
-    """
-    texto_lower = texto.lower().strip()
     
     # Casos para FactCheck primero (afirmaciones específicas, noticias virales)
     factcheck_keywords = [
@@ -550,29 +561,3 @@ def limpiar_consultas_antiguas(db: Session, dias: int = 30) -> Dict[str, Any]:
             "success": False,
             "error": str(e)
         }
-
-
-        def _detectar_tipo_contenido(texto: str) -> str:
-    """
-    Detecta el tipo de contenido para ajustar la estrategia
-    """
-    texto_lower = texto.lower()
-    
-    # Patrones de fechas futuras
-    patrones_futuros = [
-        r'\b202[5-9]\b', r'\b20[3-9][0-9]\b', r'\bpróximo año\b',
-        r'\ben \d{1,2} de [a-z]+ de 202[5-9]\b', r'\bpara 202[5-9]\b'
-    ]
-    
-    for patron in patrones_futuros:
-        if re.search(patron, texto_lower):
-            return "contenido_futuro"
-    
-    # Patrones de noticias recientes
-    if any(keyword in texto_lower for keyword in [
-        "noticia", "anunció", "declaró", "informó", "según fuentes",
-        "última hora", "breaking", "twitter", "facebook", "red social"
-    ]):
-        return "noticia_reciente"
-    
-    return "general"
