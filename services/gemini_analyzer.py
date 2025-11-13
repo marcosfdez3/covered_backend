@@ -23,37 +23,83 @@ def get_client():
 
 def analizar_con_gemini(texto: str, usar_busqueda: bool = True) -> Dict[str, Any]:
     """
-    Analiza una afirmación usando Google Gemini con búsqueda web opcional
+    Analiza una afirmación/pregunta usando Google Gemini con búsqueda web opcional
     """
     try:
         client = get_client()
         
         prompt = f"""
-        Eres un verificador de hechos profesional. Analiza esta afirmación y responde EXCLUSIVAMENTE en formato JSON válido:
+Eres un asistente de verificación de hechos. Analiza el siguiente contenido:
+
+CONTENIDO: "{texto}"
+
+INSTRUCCIONES SEGÚN EL TIPO:
+
+🔹 SI ES UNA PREGUNTA (contiene ¿?, 'es', 'son', 'fue', 'ha', 'han', 'cómo', 'cuándo', 'dónde', 'por qué', 'quién', 'cuál', etc.):
+   - RESPONDE la pregunta basándote en hechos verificados y conocimiento actual
+   - Proporciona contexto e información relevante
+   - Si es sobre eventos actuales, indica la fecha de referencia
+   - Si no tienes información suficiente, sé honesto sobre las limitaciones
+
+🔹 SI ES UNA AFIRMACIÓN/NOTICIA:
+   - VERIFICA su veracidad usando fuentes confiables
+   - Identifica posibles sesgos o desinformación
+   - Evalúa la coherencia lógica y consistencia
+
+🔹 SI ES UNA URL:
+   - Analiza el contenido del enlace
+
+PARA TODOS LOS CASOS:
+- Considera el contexto y la fecha actual
+- Identifica lenguaje sensacionalista o emocional
+- Sé objetivo y basado en hechos
+- Proporciona recomendaciones útiles al usuario
+
+FECHA ACTUAL: {datetime.now().strftime('%d de %B de %Y')}
+
+Respuesta EXCLUSIVAMENTE en formato JSON válido:
+{{
+    "tipo_contenido": "pregunta|afirmacion|url",
+    "veredicto": "probablemente_verdadero|probablemente_falso|mixto|no_verificable|respondido",
+    "confianza": 1-10,
+    "razonamiento": "explicación completa con contexto y hechos relevantes",
+    "respuesta_directa": "respuesta clara y directa a la pregunta o verificación",
+    "sesgos_detectados": ["lista de posibles sesgos identificados"],
+    "elementos_clave": ["puntos importantes identificados"],
+    "fecha_analisis": "{datetime.now().strftime('%Y-%m-%d')}",
+    "recomendacion": "recomendación específica al usuario"
+}}
+
+EJEMPLOS:
+
+Para pregunta "¿Ha dimitido el presidente X?":
+{{
+    "tipo_contenido": "pregunta",
+    "veredicto": "respondido",
+    "confianza": 8,
+    "razonamiento": "Basado en información disponible hasta la fecha actual...",
+    "respuesta_directa": "No, el presidente X no ha dimitido según las últimas informaciones...",
+    "sesgos_detectados": [],
+    "elementos_clave": ["estado actual del cargo", "fuentes de información"],
+    "fecha_analisis": "2024-12-19",
+    "recomendacion": "Consultar fuentes oficiales para confirmación"
+}}
+
+Para afirmación "El presidente X ha dimitido":
+{{
+    "tipo_contenido": "afirmacion", 
+    "veredicto": "probablemente_falso",
+    "confianza": 7,
+    "razonamiento": "No hay evidencia de que el presidente X haya dimitido...",
+    "respuesta_directa": "Esta afirmación parece ser falsa según la información disponible",
+    "sesgos_detectados": ["posible desinformación"],
+    "elementos_clave": ["falta de fuentes verificadas", "contradicción con información oficial"],
+    "fecha_analisis": "2024-12-19",
+    "recomendacion": "Verificar con medios oficiales antes de compartir"
+}}
+"""
         
-        {{
-            "veredicto": "probablemente_verdadero|probablemente_falso|mixto|no_verificable",
-            "confianza": 1-10,
-            "razonamiento": "explicación breve de tu análisis basado en información disponible",
-            "sesgos_detectados": ["lista de posibles sesgos"],
-            "recomendacion": "recomendación al usuario",
-            "elementos_clave": ["puntos importantes identificados"],
-            "fecha_analisis": "{datetime.now().strftime('%Y-%m-%d')}"
-        }}
-        
-        INSTRUCCIONES CRÍTICAS:
-        1. Para noticias recientes o eventos actuales, usa la información más actualizada disponible
-        2. Si la afirmación menciona fechas futuras, analiza su plausibilidad basándote en patrones históricos
-        3. Considera el contexto y la coherencia lógica
-        4. Identifica lenguaje sensacionalista o emocional
-        5. Si es una noticia, analiza fuentes y posibles sesgos
-        
-        FECHA ACTUAL: {datetime.now().strftime('%d de %B de %Y')}
-        
-        Afirmación a verificar: "{texto}"
-        """
-        
-        # Configurar búsqueda web si está disponible y se solicita
+        # Configurar generación
         generation_config = {
             "temperature": 0.1,
             "top_p": 0.8,
@@ -63,9 +109,9 @@ def analizar_con_gemini(texto: str, usar_busqueda: bool = True) -> Dict[str, Any
         # Intentar usar búsqueda web si está disponible
         if usar_busqueda:
             try:
-                # Para Gemini 1.5 o superior con búsqueda web
+                # Para Gemini 1.5 Pro con búsqueda web
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash",  # Modelo que soporta búsqueda web
+                    model="gemini-1.5-pro",
                     contents=prompt,
                     config=generation_config,
                     tools=[{"google_search_retrieval": {}}]
@@ -73,13 +119,13 @@ def analizar_con_gemini(texto: str, usar_busqueda: bool = True) -> Dict[str, Any
             except Exception as e:
                 logger.warning(f"Búsqueda web no disponible, usando modelo estándar: {e}")
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-1.5-flash",
                     contents=prompt,
                     config=generation_config
                 )
         else:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-1.5-flash",
                 contents=prompt,
                 config=generation_config
             )
@@ -92,16 +138,25 @@ def analizar_con_gemini(texto: str, usar_busqueda: bool = True) -> Dict[str, Any
             response_text = response_text[7:]
         if response_text.endswith('```'):
             response_text = response_text[:-3]
+        response_text = response_text.strip()
         
         resultado = json.loads(response_text)
+        
+        # Preparar respuesta según el tipo de contenido
+        if resultado.get("tipo_contenido") == "pregunta":
+            resultado_final = "respondido"
+        else:
+            resultado_final = resultado["veredicto"]
         
         return {
             "success": True,
             "fuente": "gemini",
-            "resultado": resultado["veredicto"],
+            "resultado": resultado_final,
             "confianza": resultado["confianza"],
             "detalle": {
+                "tipo_contenido": resultado.get("tipo_contenido", "afirmacion"),
                 "razonamiento": resultado["razonamiento"],
+                "respuesta_directa": resultado.get("respuesta_directa", resultado["razonamiento"]),
                 "sesgos_detectados": resultado["sesgos_detectados"],
                 "recomendacion": resultado["recomendacion"],
                 "elementos_clave": resultado["elementos_clave"],

@@ -116,22 +116,28 @@ def _obtener_razonamiento(resultado: Dict[str, Any]) -> str:
     """
     Extrae el razonamiento de la respuesta, priorizando diferentes fuentes
     """
-    # 1. Razonamiento directo de IA
+    # 1. Respuesta directa de IA para preguntas
+    if (resultado.get("detalle_ia") and 
+        resultado["detalle_ia"].get("respuesta_directa")):
+        return resultado["detalle_ia"]["respuesta_directa"]
+    
+    # 2. Razonamiento directo de IA
     if resultado.get("detalle_ia") and resultado["detalle_ia"].get("razonamiento"):
         return resultado["detalle_ia"]["razonamiento"]
     
-    # 2. Razonamiento de FactCheck
+    # 3. Razonamiento de FactCheck
     if resultado.get("detalle_factcheck") and isinstance(resultado["detalle_factcheck"], dict):
         if resultado["detalle_factcheck"].get("razonamiento"):
             return resultado["detalle_factcheck"]["razonamiento"]
     
-    # 3. Razonamiento de análisis complementario
+    # 4. Razonamiento de análisis complementario
     if resultado.get("analisis_ia_complementario") and resultado["analisis_ia_complementario"].get("razonamiento"):
         return resultado["analisis_ia_complementario"]["razonamiento"]
     
-    # 4. Razonamiento por defecto basado en el resultado
+    # 5. Razonamiento por defecto basado en el resultado
     resultado_final = resultado.get("resultado_final", "desconocido")
     razonamientos_por_defecto = {
+        "respondido": "Se ha proporcionado una respuesta basada en la información disponible.",
         "verificado": "Esta información ha sido verificada por fuentes oficiales de fact-checking.",
         "probablemente_verdadero": "El análisis sugiere que esta afirmación es probablemente verdadera basándose en información disponible.",
         "probablemente_falso": "El análisis indica que esta afirmación contiene elementos cuestionables o inexactos.",
@@ -147,7 +153,21 @@ def _detectar_tipo_contenido(texto: str) -> str:
     """
     Detecta el tipo de contenido para ajustar la estrategia
     """
-    texto_lower = texto.lower()
+    texto_lower = texto.lower().strip()
+    
+    # Detectar preguntas de manera más precisa
+    es_pregunta = (
+        texto_lower.startswith(('¿', '?')) or
+        texto_lower.endswith('?') or
+        any(palabra in texto_lower for palabra in [
+            ' es ', ' son ', ' fue ', ' fueron ', ' ha ', ' han ', ' había ', ' hubo ',
+            ' cómo ', ' cuándo ', ' dónde ', ' por qué ', ' quién ', ' cuál ', ' cuántos ', ' cuántas ',
+            ' qué ', ' cuáles ', ' puede ', ' podrían ', ' debería ', ' deben '
+        ]) and len(texto_lower.split()) < 25  # Preguntas típicamente más cortas
+    )
+    
+    if es_pregunta:
+        return "pregunta"
     
     # Patrones de fechas futuras
     patrones_futuros = [
@@ -176,8 +196,8 @@ def _elegir_modo_inteligente(texto: str) -> str:
     
     tipo_contenido = _detectar_tipo_contenido(texto)
     
-    # Para contenido futuro o reciente, priorizar análisis contextual de IA
-    if tipo_contenido in ["contenido_futuro", "noticia_reciente"]:
+    # Para preguntas, contenido futuro o reciente, priorizar análisis contextual de IA
+    if tipo_contenido in ["pregunta", "contenido_futuro", "noticia_reciente"]:
         return "ia_first"
     
     # Casos para FactCheck primero (afirmaciones específicas, noticias virales)
@@ -195,8 +215,9 @@ def _elegir_modo_inteligente(texto: str) -> str:
         "funciona", "efectivo", "seguro", "peligroso", "mito", "realidad"
     ]
     
-    # Preguntas directas
-    if texto_lower.startswith(('¿', '?')) or any(texto_lower.startswith(p) for p in ['es ', 'son ', 'fue ', 'fueron ']):
+    # Preguntas directas (detección adicional)
+    if (texto_lower.startswith(('¿', '?')) or 
+        any(texto_lower.startswith(p) for p in ['es ', 'son ', 'fue ', 'fueron ', 'ha ', 'han '])):
         return "ia_first"
     
     # Textos muy largos (probablemente artículos completos)
@@ -242,15 +263,27 @@ def _estrategia_factcheck_primero(texto: str, db: Session) -> Dict[str, Any]:
     
     if resultado_ia["success"]:
         logger.info(f"🤖 Gemini AI completó análisis: {resultado_ia['resultado']}")
+        
+        # Adaptar respuesta según el tipo de contenido
+        detalle_ia = resultado_ia.get("detalle", {})
+        tipo_contenido = detalle_ia.get("tipo_contenido", "afirmacion")
+        
+        if tipo_contenido == "pregunta":
+            resultado_final = "respondido"
+            recomendacion = "Respuesta basada en análisis de IA - verificar con fuentes adicionales para confirmación."
+        else:
+            resultado_final = resultado_ia["resultado"]
+            recomendacion = "Análisis basado en IA - verificar con fuentes adicionales."
+        
         return {
             "fuente_primaria": "gemini_fallback",
-            "veredicto_final": resultado_ia["resultado"],
+            "veredicto_final": resultado_final,
             "confianza": resultado_ia.get("confianza", 5),
-            "detalle_ia": resultado_ia.get("detalle", {}),
+            "detalle_ia": detalle_ia,
             "factcheck_previo": "no_encontrado",
-            "resultado_final": resultado_ia["resultado"],
+            "resultado_final": resultado_final,
             "tiene_verificacion_oficial": False,
-            "recomendacion": "Análisis basado en IA - verificar con fuentes adicionales."
+            "recomendacion": recomendacion
         }
     
     # 3. Si todo falla
@@ -272,14 +305,26 @@ def _estrategia_ia_primero(texto: str) -> Dict[str, Any]:
     
     if resultado_ia["success"]:
         logger.info(f"🤖 Gemini AI completó análisis: {resultado_ia['resultado']}")
+        
+        # Adaptar respuesta según el tipo de contenido
+        detalle_ia = resultado_ia.get("detalle", {})
+        tipo_contenido = detalle_ia.get("tipo_contenido", "afirmacion")
+        
+        if tipo_contenido == "pregunta":
+            resultado_final = "respondido"
+            recomendacion = "Respuesta basada en análisis de IA - verificar con fuentes oficiales para confirmación."
+        else:
+            resultado_final = resultado_ia["resultado"]
+            recomendacion = "Análisis basado en IA - considerar verificar con fuentes oficiales."
+        
         return {
             "fuente_primaria": "gemini",
-            "veredicto_final": resultado_ia["resultado"],
+            "veredicto_final": resultado_final,
             "confianza": resultado_ia.get("confianza", 5),
-            "detalle_ia": resultado_ia.get("detalle", {}),
-            "resultado_final": resultado_ia["resultado"],
+            "detalle_ia": detalle_ia,
+            "resultado_final": resultado_final,
             "tiene_verificacion_oficial": False,
-            "recomendacion": "Análisis basado en IA - considerar verificar con fuentes oficiales."
+            "recomendacion": recomendacion
         }
     
     logger.warning("⚠️ Gemini AI falló")
@@ -322,6 +367,7 @@ def _estrategia_solo_factcheck(texto: str, db: Session) -> Dict[str, Any]:
         "tiene_verificacion_oficial": False,
         "recomendacion": "No se encontraron verificaciones existentes para esta afirmación."
     }
+}
 
 def _estrategia_auto(texto: str, db: Session) -> Dict[str, Any]:
     """Estrategia balanceada que usa ambos sistemas de forma inteligente"""
@@ -357,16 +403,27 @@ def _combinar_resultados(factcheck: Dict, ia: Dict) -> Dict[str, Any]:
     # Si IA tiene alta confianza y FactCheck no encontró nada
     if ia_exitosa and ia.get("confianza", 0) >= 7:
         logger.info("✅ Combinación: Usando IA con alta confianza")
-        veredicto_ia = ia["resultado"]
+        
+        # Adaptar según tipo de contenido
+        detalle_ia = ia.get("detalle", {})
+        tipo_contenido = detalle_ia.get("tipo_contenido", "afirmacion")
+        
+        if tipo_contenido == "pregunta":
+            veredicto_final = "respondido"
+            recomendacion = "Respuesta basada en IA con alta confianza - verificar con fuentes adicionales."
+        else:
+            veredicto_final = ia["resultado"]
+            recomendacion = "Análisis basado en IA con alta confianza - considerar verificación adicional."
+        
         return {
             "fuente_primaria": "gemini",
-            "veredicto_final": veredicto_ia,
+            "veredicto_final": veredicto_final,
             "confianza": ia["confianza"],
-            "detalle_ia": ia["detalle"],
+            "detalle_ia": detalle_ia,
             "factcheck_previo": factcheck.get("resultado") if fc_exitoso else "no_encontrado",
-            "resultado_final": veredicto_ia,
+            "resultado_final": veredicto_final,
             "tiene_verificacion_oficial": False,
-            "recomendacion": "Análisis basado en IA con alta confianza - considerar verificación adicional."
+            "recomendacion": recomendacion
         }
     
     # Si ambos métodos coinciden en el veredicto
@@ -388,15 +445,26 @@ def _combinar_resultados(factcheck: Dict, ia: Dict) -> Dict[str, Any]:
     # Caso por defecto - usar el mejor disponible
     logger.info("🔍 Combinación: Usando mejor resultado disponible")
     if ia_exitosa:
+        # Adaptar según tipo de contenido
+        detalle_ia = ia.get("detalle", {})
+        tipo_contenido = detalle_ia.get("tipo_contenido", "afirmacion")
+        
+        if tipo_contenido == "pregunta":
+            resultado_final = "respondido"
+            recomendacion = "Respuesta basada en IA - verificar con fuentes adicionales para confirmación."
+        else:
+            resultado_final = ia["resultado"]
+            recomendacion = "Análisis basado en IA - verificar con fuentes adicionales."
+        
         return {
             "fuente_primaria": "gemini",
-            "veredicto_final": ia["resultado"],
+            "veredicto_final": resultado_final,
             "confianza": ia.get("confianza", 5),
-            "detalle_ia": ia.get("detalle", {}),
+            "detalle_ia": detalle_ia,
             "factcheck_previo": factcheck.get("resultado") if fc_exitoso else "no_encontrado",
-            "resultado_final": ia["resultado"],
+            "resultado_final": resultado_final,
             "tiene_verificacion_oficial": False,
-            "recomendacion": "Análisis basado en IA - verificar con fuentes adicionales para confirmación."
+            "recomendacion": recomendacion
         }
     elif fc_exitoso:
         return {
@@ -417,6 +485,7 @@ def _combinar_resultados(factcheck: Dict, ia: Dict) -> Dict[str, Any]:
             "tiene_verificacion_oficial": False,
             "recomendacion": "No se pudo analizar la afirmación. Intente reformular o usar otras fuentes."
         }
+}
 
 def _veredictos_coinciden(veredicto_fc: str, veredicto_ia: str) -> bool:
     """Determina si los veredictos de FactCheck e IA son consistentes"""
@@ -425,8 +494,8 @@ def _veredictos_coinciden(veredicto_fc: str, veredicto_ia: str) -> bool:
     
     # Mapeo de equivalencias
     equivalencias = {
-        "verificado": ["probablemente_verdadero"],
-        "no_encontrado": ["no_verificable", "no_se_puede_verificar"],
+        "verificado": ["probablemente_verdadero", "respondido"],
+        "no_encontrado": ["no_verificable", "no_se_puede_verificar", "respondido"],
         "probablemente_falso": ["probablemente_falso", "falso"]
     }
     
@@ -449,7 +518,7 @@ def _veredictos_coinciden(veredicto_fc: str, veredicto_ia: str) -> bool:
 def _traducir_veredicto_combinado(veredicto_fc: str, veredicto_ia: str) -> str:
     """Traduce veredictos combinados a un formato estándar"""
     # Priorizar veredictos más específicos de IA
-    if veredicto_ia in ["probablemente_verdadero", "probablemente_falso", "mixto"]:
+    if veredicto_ia in ["probablemente_verdadero", "probablemente_falso", "mixto", "respondido"]:
         return veredicto_ia
     elif veredicto_fc == "verificado":
         return "probablemente_verdadero"
@@ -467,6 +536,7 @@ def _analizar_con_gemini(texto: str) -> Dict[str, Any]:
             "success": False,
             "error": f"Error con servicio de IA: {str(e)}"
         }
+}
 
 def _preparar_respuesta_para_bd(resultado: Dict[str, Any]) -> str:
     """Prepara la respuesta para almacenar en la base de datos"""
@@ -489,6 +559,8 @@ def _preparar_respuesta_para_bd(resultado: Dict[str, Any]) -> str:
             detalle_ia = resultado["detalle_ia"].copy()
             if "razonamiento" in detalle_ia and len(detalle_ia["razonamiento"]) > 500:
                 detalle_ia["razonamiento"] = detalle_ia["razonamiento"][:500] + "..."
+            if "respuesta_directa" in detalle_ia and len(detalle_ia["respuesta_directa"]) > 500:
+                detalle_ia["respuesta_directa"] = detalle_ia["respuesta_directa"][:500] + "..."
             respuesta_bd["detalle_ia"] = detalle_ia
         
         return str(respuesta_bd)
@@ -496,6 +568,7 @@ def _preparar_respuesta_para_bd(resultado: Dict[str, Any]) -> str:
     except Exception as e:
         logger.error(f"Error preparando respuesta para BD: {e}")
         return f"Resultado: {resultado.get('resultado_final', 'error')}"
+}
 
 def obtener_estadisticas_hibridas(db: Session) -> Dict[str, Any]:
     """Obtiene estadísticas del uso del sistema híbrido"""
@@ -533,6 +606,7 @@ def obtener_estadisticas_hibridas(db: Session) -> Dict[str, Any]:
             "distribucion_resultados": {},
             "error": str(e)
         }
+}
 
 def limpiar_consultas_antiguas(db: Session, dias: int = 30) -> Dict[str, Any]:
     """Limpia consultas más antiguas que X días"""
