@@ -155,18 +155,11 @@ def _detectar_tipo_contenido(texto: str) -> str:
     """
     texto_lower = texto.lower().strip()
     
-    # Detectar preguntas de manera más precisa
-    es_pregunta = (
-        texto_lower.startswith(('¿', '?')) or
-        texto_lower.endswith('?') or
-        any(palabra in texto_lower for palabra in [
-            ' es ', ' son ', ' fue ', ' fueron ', ' ha ', ' han ', ' había ', ' hubo ',
-            ' cómo ', ' cuándo ', ' dónde ', ' por qué ', ' quién ', ' cuál ', ' cuántos ', ' cuántas ',
-            ' qué ', ' cuáles ', ' puede ', ' podrían ', ' debería ', ' deben '
-        ]) and len(texto_lower.split()) < 25  # Preguntas típicamente más cortas
-    )
-    
-    if es_pregunta:
+    # 🔥 DETECCIÓN MEJORADA DE PREGUNTAS - MÁS AGRESIVA
+    # Cualquier texto que termine con ? o contenga patrones de pregunta
+    if (texto_lower.endswith('?') or 
+        texto_lower.startswith('¿') or
+        any(palabra in texto_lower for palabra in [' es ', ' son ', ' fue ', ' fueron ', ' ha ', ' han '])):
         return "pregunta"
     
     # Patrones de fechas futuras
@@ -196,46 +189,45 @@ def _elegir_modo_inteligente(texto: str) -> str:
     
     tipo_contenido = _detectar_tipo_contenido(texto)
     
-    # Para preguntas, contenido futuro o reciente, priorizar análisis contextual de IA
-    if tipo_contenido in ["pregunta", "contenido_futuro", "noticia_reciente"]:
+    # 🔥 PRIORIDAD ABSOLUTA PARA PREGUNTAS - SIEMPRE IA_FIRST
+    if tipo_contenido == "pregunta":
+        logger.info(f"🎯 Pregunta detectada: '{texto}' -> Modo IA primero")
+        return "ia_first"
+    
+    # Para contenido futuro o reciente, priorizar análisis contextual de IA
+    if tipo_contenido in ["contenido_futuro", "noticia_reciente"]:
+        return "ia_first"
+    
+    # 🔥 DETECCIÓN ADICIONAL DE PREGUNTAS POR PATRONES
+    # Patrones claros de pregunta
+    patrones_pregunta = [
+        r'.*\?$',  # Termina con ?
+        r'^¿.*',   # Empieza con ¿
+        r'^(es|son|fue|fueron|ha|han)\s+',  # Empieza con verbo de pregunta
+        r'.*\s+(cómo|cuándo|dónde|por qué|quién|cuál|cuáles)\s+.*',  # Contiene palabra pregunta
+    ]
+    
+    for patron in patrones_pregunta:
+        if re.match(patron, texto_lower, re.IGNORECASE):
+            logger.info(f"🎯 Patrón de pregunta detectado: '{texto}' -> Modo IA primero")
+            return "ia_first"
+    
+    # Textos muy cortos (búsquedas simples) - IA primero
+    if len(texto.split()) < 8:
         return "ia_first"
     
     # Casos para FactCheck primero (afirmaciones específicas, noticias virales)
     factcheck_keywords = [
         "viral", "fake news", "noticia falsa", "desinformación", "bulo",
         "política", "elecciones", "covid", "vacuna", "salud pública", "gobierno",
-        "presidente", "ministro", "ley", "decreto", "twitter", "facebook", "whatsapp",
-        "compartido", "cadena", "forwarded"
+        "presidente", "ministro", "ley", "decreto"
     ]
     
-    # Casos para IA primero (preguntas, análisis, consejos)
-    ia_keywords = [
-        "¿cómo", "por qué", "cuál es", "qué significa", "es bueno", "es malo",
-        "consejo", "recomendación", "opinión", "análisis", "beneficios", "riesgos",
-        "funciona", "efectivo", "seguro", "peligroso", "mito", "realidad"
-    ]
-    
-    # Preguntas directas (detección adicional)
-    if (texto_lower.startswith(('¿', '?')) or 
-        any(texto_lower.startswith(p) for p in ['es ', 'son ', 'fue ', 'fueron ', 'ha ', 'han '])):
-        return "ia_first"
-    
-    # Textos muy largos (probablemente artículos completos)
-    if len(texto.split()) > 100:
-        return "factcheck_first"
-    
-    # Textos muy cortos (búsquedas simples)
-    if len(texto.split()) < 5:
-        return "ia_first"
-    
-    # Verificar keywords
     if any(keyword in texto_lower for keyword in factcheck_keywords):
         return "factcheck_first"
-    elif any(keyword in texto_lower for keyword in ia_keywords):
-        return "ia_first"
     
-    # Por defecto: factcheck primero (más confiable cuando hay resultados)
-    return "factcheck_first"
+    # Por defecto: IA primero para mejor experiencia de usuario
+    return "ia_first"
 
 def _estrategia_factcheck_primero(texto: str, db: Session) -> Dict[str, Any]:
     """Primero intenta FactCheck, luego IA si no encuentra"""
