@@ -53,7 +53,6 @@ def analizar_con_gemini(texto: str, usar_busqueda: bool = True) -> Dict[str, Any
         Afirmación a verificar: "{texto}"
         """
         
-        # Configurar búsqueda web si está disponible y se solicita
         generation_config = {
             "temperature": 0.1,
             "top_p": 0.8,
@@ -63,23 +62,22 @@ def analizar_con_gemini(texto: str, usar_busqueda: bool = True) -> Dict[str, Any
         # Intentar usar búsqueda web si está disponible
         if usar_busqueda:
             try:
-                # Para Gemini 1.5 o superior con búsqueda web
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash",  # Modelo que soporta búsqueda web
+                    model="gemini-2.5-flash",
                     contents=prompt,
                     config=generation_config,
-                    tools=[{"google_search_retrieval": {}}]
+                    tools=[{"google_search": {}}]
                 )
             except Exception as e:
                 logger.warning(f"Búsqueda web no disponible, usando modelo estándar: {e}")
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-2.5-flash",
                     contents=prompt,
                     config=generation_config
                 )
         else:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=prompt,
                 config=generation_config
             )
